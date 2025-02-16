@@ -1,0 +1,173 @@
+---
+- name: Deploy DVWA with Security Automation Tools
+  hosts: webservers
+  become: yes
+  vars:
+    admin_email: "admin@example.com"
+    smtp_server: "smtp.example.com"
+    smtp_port: 25
+    error_subject: "Ansible Playbook Error Report"
+    dvwa_url: "http://dvwa.example.com"  # Adjust DNS/host as needed
+
+  tasks:
+    - block:
+        #############################
+        # 1. Deploy DVWA with Apache
+        #############################
+        - name: Install Apache and PHP packages
+          apt:
+            name:
+              - apache2
+              - php
+              - php-mysqli
+              - libapache2-mod-php
+            state: present
+            update_cache: yes
+
+        - name: Clone DVWA from GitHub
+          git:
+            repo: "https://github.com/digininja/DVWA.git"
+            dest: /var/www/html/dvwa
+            version: master
+
+        - name: Configure Apache for DVWA
+          copy:
+            dest: /etc/apache2/sites-available/dvwa.conf
+            content: |
+              <VirtualHost *:80>
+                  ServerName dvwa.example.com
+                  DocumentRoot /var/www/html/dvwa
+                  <Directory /var/www/html/dvwa>
+                      AllowOverride All
+                      Require all granted
+                  </Directory>
+              </VirtualHost>
+          notify: Reload Apache
+
+        - name: Enable DVWA site in Apache
+          command: a2ensite dvwa.conf
+          notify: Reload Apache
+
+        #############################
+        # 2. Setup Nginx Reverse Proxy
+        #############################
+        - name: Install Nginx
+          apt:
+            name: nginx
+            state: present
+
+        - name: Configure Nginx as reverse proxy for DVWA
+          copy:
+            dest: /etc/nginx/sites-available/dvwa_proxy.conf
+            content: |
+              server {
+                  listen 80;
+                  server_name dvwa.example.com;
+                  location / {
+                      proxy_pass http://127.0.0.1:80;
+                      proxy_set_header Host $host;
+                      proxy_set_header X-Real-IP $remote_addr;
+                      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                      proxy_set_header X-Forwarded-Proto $scheme;
+                  }
+              }
+          notify: Reload Nginx
+
+        - name: Enable Nginx reverse proxy configuration
+          file:
+            src: /etc/nginx/sites-available/dvwa_proxy.conf
+            dest: /etc/nginx/sites-enabled/dvwa_proxy.conf
+            state: link
+          notify: Reload Nginx
+
+        #############################
+        # 3. Run SAST with Semgrep
+        #############################
+        - name: Run Semgrep for static analysis on DVWA code
+          command: semgrep --config=auto /var/www/html/dvwa
+          register: semgrep_result
+          ignore_errors: yes
+
+        #############################
+        # 4. Run DAST with OWASP ZAP
+        #############################
+        - name: Run OWASP ZAP quick scan on DVWA
+          command: zap-cli quick-scan --self-contained {{ dvwa_url }}
+          register: zap_result
+          ignore_errors: yes
+
+        #############################
+        # 5. Setup Prometheus for Monitoring
+        #############################
+        - name: Install Prometheus
+          apt:
+            name: prometheus
+            state: present
+
+        - name: Configure Prometheus (sample config)
+          copy:
+            dest: /etc/prometheus/prometheus.yml
+            content: |
+              global:
+                scrape_interval: 15s
+              scrape_configs:
+                - job_name: 'dvwa'
+                  static_configs:
+                    - targets: ['127.0.0.1:80']
+          notify: Restart Prometheus
+
+        #############################
+        # 6. Run Lynis Audit
+        #############################
+        - name: Install Lynis
+          apt:
+            name: lynis
+            state: present
+
+        - name: Run Lynis system audit
+          command: lynis audit system --quiet
+          register: lynis_result
+          ignore_errors: yes
+
+      rescue:
+        - name: Capture error details
+          set_fact:
+            error_report: "Error in task: {{ ansible_failed_task }}\nResult: {{ ansible_failed_result }}"
+
+        - name: Send error email to administrators
+          mail:
+            host: "{{ smtp_server }}"
+            port: "{{ smtp_port }}"
+            subject: "{{ error_subject }}"
+            to: "{{ admin_email }}"
+            body: |
+              An error occurred during the execution of the Ansible playbook.
+              Error Details:
+              {{ error_report }}
+
+      always:
+        - name: Print Semgrep results
+          debug:
+            msg: "Semgrep output: {{ semgrep_result.stdout | default('No output') }}"
+        - name: Print OWASP ZAP results
+          debug:
+            msg: "OWASP ZAP output: {{ zap_result.stdout | default('No output') }}"
+        - name: Print Lynis audit results
+          debug:
+            msg: "Lynis audit output: {{ lynis_result.stdout | default('No output') }}"
+
+  handlers:
+    - name: Reload Apache
+      service:
+        name: apache2
+        state: reloaded
+
+    - name: Reload Nginx
+      service:
+        name: nginx
+        state: reloaded
+
+    - name: Restart Prometheus
+      service:
+        name: prometheus
+        state: restarted
