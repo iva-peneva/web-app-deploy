@@ -1,0 +1,10 @@
+---
+- name: Install Lynis
+  hosts: 192.168.1.130
+  become: yes
+  tasks:
+    - name: Ensure Lynis is installed
+      apt:
+        name: lynis
+        state: present
+        update_cache: yes

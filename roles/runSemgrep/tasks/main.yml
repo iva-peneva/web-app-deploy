@@ -1,0 +1,13 @@
+---
+- name: Run Semgrep static analysis on DVWA code
+  hosts: 192.168.1.130
+#  become: yes
+  tasks:
+    - name: Run Semgrep scan on DVWA codebase
+      command: /home/ansible/.local/pipx/venvs/semgrep/bin/semgrep --config=auto /var/www/html/dvwa
+      register: semgrep_result
+      ignore_errors: yes
+
+    - name: Output Semgrep results
+      debug:
+        var: semgrep_result.stdout

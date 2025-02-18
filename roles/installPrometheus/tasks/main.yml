@@ -1,0 +1,74 @@
+---
+- name: Install Prometheus on Debian-based system
+  hosts: 192.168.1.130
+  become: yes
+  tasks:
+
+    - name: Download Prometheus tarball
+      get_url:
+        url: https://github.com/prometheus/prometheus/releases/download/v3.2.0/prometheus-3.2.0.linux-amd64.tar.gz
+        dest: /tmp/prometheus-3.2.0.linux-amd64.tar.gz
+
+    - name: Extract Prometheus tarball
+      unarchive:
+        src: /tmp/prometheus-3.2.0.linux-amd64.tar.gz
+        dest: /tmp/
+        remote_src: yes
+
+    - name: Move Prometheus binary to /usr/local/bin
+      command: mv /tmp/prometheus-3.2.0.linux-amd64/prometheus /usr/local/bin/
+
+    - name: Move Promtool binary to /usr/local/bin
+      command: mv /tmp/prometheus-3.2.0.linux-amd64/promtool /usr/local/bin/
+
+    - name: Create Prometheus directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+      with_items:
+        - /etc/prometheus
+        - /var/lib/prometheus
+
+    - name: Move Prometheus configuration file to /etc/prometheus
+      command: mv /tmp/prometheus-3.2.0.linux-amd64/prometheus.yml /etc/prometheus/
+
+    - name: Create Prometheus user
+      user:
+        name: prometheus
+        shell: /bin/false
+        state: present
+
+    - name: Set ownership of /etc/prometheus
+      file:
+        path: /etc/prometheus
+        owner: prometheus
+        group: prometheus
+        recurse: yes
+
+    - name: Set ownership of /var/lib/prometheus
+      file:
+        path: /var/lib/prometheus
+        owner: prometheus
+        group: prometheus
+
+    - name: Copy Prometheus systemd service file
+      copy:
+        src: /etc/ansible/files/prometheus.service
+        dest: /etc/systemd/system/prometheus.service
+        mode: '0644'
+
+    - name: Reload systemd daemon
+      systemd:
+        daemon_reload: yes
+
+    - name: Start Prometheus service
+      systemd:
+        name: prometheus
+        state: started
+        enabled: yes
+
+    - name: Check Prometheus service status
+      systemd:
+        name: prometheus
+        state: started

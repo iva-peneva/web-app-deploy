@@ -1,0 +1,15 @@
+---
+- name: Run Lynis Security Audit
+  hosts: 192.168.1.130
+  become: yes
+  tasks:
+    - name: Run Lynis scan
+      command: lynis audit system
+      register: lynis_output
+      changed_when: false
+
+    - name: Display Lynis scan results
+      debug:
+        msg: "{{ lynis_output.stdout }}"
+    - name: Send Lynis report via email
+      command: mail -s "Lynis Security Audit Report" 62623113@naval-acad.bg < /var/log/lynis/lynis-report.dat

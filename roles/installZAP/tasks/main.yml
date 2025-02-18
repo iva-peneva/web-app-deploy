@@ -1,0 +1,71 @@
+---
+- name: Install OWASP ZAP
+  hosts: 192.168.1.130
+  become: yes
+  tasks:
+
+    # Install default JDK
+    - name: Install default JDK
+      apt:
+        name: default-jdk
+        state: present
+        update_cache: yes
+
+    # Add the zap user
+    - name: Add zap user
+      user:
+        name: zap
+        state: present
+
+    # Create directory /opt/zap
+    - name: Create directory /opt/zap
+      file:
+        path: /opt/zap
+        state: directory
+        owner: zap
+        group: zap
+        mode: '0755'
+
+    # Download ZAP tarball
+    - name: Download ZAP tarball
+      get_url:
+        url: https://github.com/zaproxy/zaproxy/releases/download/v2.16.0/ZAP_2.16.0_Linux.tar.gz
+        dest: /tmp/ZAP_2.16.0_Linux.tar.gz
+
+    # Extract the downloaded tarball
+    - name: Extract ZAP tarball
+      unarchive:
+        src: /tmp/ZAP_2.16.0_Linux.tar.gz
+        dest: /opt/zap/
+        remote_src: yes
+        owner: zap
+        group: zap
+
+    # Ensure correct ownership of the files
+    - name: Set ownership of /opt/zap
+      file:
+        path: /opt/zap
+        owner: zap
+        group: zap
+        recurse: yes
+
+    # Copy the OWASP ZAP service file
+    - name: Copy OWASP ZAP systemd service file
+      copy:
+        src: /etc/ansible/files/owasp-zap.service
+        dest: /etc/systemd/system/owasp-zap.service
+        owner: root
+        group: root
+        mode: '0644'
+
+    # Reload systemd to apply the new service file
+    - name: Reload systemd
+      systemd:
+        daemon_reload: yes
+
+    # Start the OWASP ZAP service
+    - name: Start OWASP ZAP service
+      systemd:
+        name: owasp-zap.service
+        state: started
+        enabled: yes
